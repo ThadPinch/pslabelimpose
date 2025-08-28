@@ -282,9 +282,25 @@
 
       rotatePDFOrientation = useRot;
 
-      // Centering math
-      const gridW = cols * labelWmm + (cols - 1) * GAP_MM; // total width of columns + gaps
-      const leftEdgeMM = margins.left + Math.max(0, (innerW - gridW) / 2); // centered within usable width
+    //   // Centering math
+    //   const gridW = cols * labelWmm + (cols - 1) * GAP_MM; // total width of columns + gaps
+    //   const leftEdgeMM = margins.left + Math.max(0, (innerW - gridW) / 2); // centered within usable width
+    // --- Centering on the full sheet (not just right of the dot) ---
+    const gridW = cols * labelWmm + (cols - 1) * GAP_MM; // total width of columns + gaps
+
+    // Ideal left edge if perfectly centered on the sheet
+    let leftEdgeMM = (SHEET_WIDTH_MM - gridW) / 2;
+
+    // Enforce bounds:
+    //  - keep user left/right overrides (margins.left / margins.right)
+    //  - keep minimum clearance so art never overlaps the black square
+    const minLeft = Math.max(margins.left, MIN_LEFT_CLEAR_MM);
+    const maxLeft = SHEET_WIDTH_MM - margins.right - gridW;
+
+    if (leftEdgeMM < minLeft) leftEdgeMM = minLeft;
+    if (leftEdgeMM > maxLeft) leftEdgeMM = maxLeft;
+
+
 
       // Build output
       const outDoc = await PDFDocument.create();
@@ -330,7 +346,10 @@
         });
       }
 
-      imposedPDFBytes = await outDoc.save();
+      const bytes = await outDoc.save();
+
+    // Keep a pristine copy for DOWNLOAD (never give this to PDF.js)
+    imposedPDFBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 
       // Update UI
       document.getElementById('infoGrid').style.display = 'grid';
@@ -340,7 +359,9 @@
       document.getElementById('labelsPerSheet').textContent = cols * rows;
       document.getElementById('orientation').textContent = rotatePDFOrientation ? 'Rotated 90°' : 'Normal';
 
-      await displayPDF(imposedPDFBytes);
+    //   await displayPDF(imposedPDFBytes);
+        const previewBytes = imposedPDFBytes.slice();
+        await displayPDF(previewBytes);
       document.getElementById('viewerSection').style.display = 'block';
 
       const downloadBtn = document.querySelector('button[onclick="downloadPDF()"]');
@@ -377,20 +398,25 @@
 
     function downloadPDF() {
       try {
-        if (!imposedPDFBytes) {
-          alert('No PDF available to download. Please upload and process a PDF first.');
-          return;
+        if (!(imposedPDFBytes instanceof Uint8Array) || imposedPDFBytes.length === 0) {
+        alert('PDF not ready to download yet. Please reprocess the file.');
+        return;
         }
-        const btn = document.querySelector('button[onclick="downloadPDF()"]');
-        if (btn) { btn.textContent = 'Downloading...'; btn.disabled = true; }
 
-        const data = imposedPDFBytes instanceof Uint8Array ? imposedPDFBytes : new Uint8Array(imposedPDFBytes);
-        const blob = new Blob([data], { type: 'application/pdf' });
+        const blob = new Blob([imposedPDFBytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = originalFilename + '_imposed.pdf'; a.style.display = 'none';
-        document.body.appendChild(a); a.click();
-        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); if (btn) { btn.textContent = 'Download Imposed PDF'; btn.disabled = false; } }, 100);
+        a.href = url;
+        a.download = originalFilename + '_imposed.pdf';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+        }, 100);
+
       } catch (e) {
         alert('Error downloading PDF: ' + e.message);
         const btn = document.querySelector('button[onclick="downloadPDF()"]');
