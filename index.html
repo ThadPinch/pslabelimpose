@@ -97,14 +97,19 @@
             <label for="rightGap">Right Gap (mm)</label>
             <input type="number" id="rightGap" min="0" max="100" step="0.1" value="0" disabled />
           </div>
+          <div class="control-group">
+            <label for="colGap">Column Gap (mm)</label>
+            <input type="number" id="colGap" min="0" max="100" step="0.1" value="1" />
+          </div>
         </div>
       </div>
 
       <div class="note">
         ✅ Enforced: width <b>320 mm</b>, height ≤ <b>980 mm</b> and equals used art height.<br/>
-        ✅ Gaps: <b>1 mm</b> between columns and rows; top/bottom margins: <b>1 mm</b> each.<br/>
+        ✅ Row gap: <b>1 mm</b>; Column gap: configurable.<br/>
+        ✅ Top/bottom margins: <b>1 mm</b> each.<br/>
         ✅ Black square: <b>6.35×6.35 mm</b> at <b>2.57 mm</b> from left; bottom is <b>1.65 mm ABOVE</b> each row’s art bottom.<br/>
-        ✅ Rows are <b>centered horizontally</b> in the usable width.
+        ✅ Columns are <b>centered on the full sheet</b> (honoring overrides & dot clearance).
       </div>
 
       <div class="info-grid" id="infoGrid" style="display:none;">
@@ -143,11 +148,11 @@
     // ---------- Constants (mm) ----------
     const SHEET_WIDTH_MM = 320;
     const MAX_SHEET_HEIGHT_MM = 980;
-    const GAP_MM = 1;                        // between labels horizontally & vertically
-    const TOP_MARGIN_MM = 1;                 // from sheet top to art grid
-    const BOTTOM_MARGIN_MM = 1;              // from sheet bottom to art grid
+    const ROW_GAP_MM = 1;                   // vertical gap between rows
+    const TOP_MARGIN_MM = 1;                // from sheet top to art grid
+    const BOTTOM_MARGIN_MM = 1;             // from sheet bottom to art grid
     const DOT_SIZE_MM = 6.35;
-    const DOT_X_MM = 2.57;                   // from left sheet edge
+    const DOT_X_MM = 2.57;                  // from left sheet edge
     const DOT_OFFSET_FROM_ART_BOTTOM_MM = 1.65; // dot bottom ABOVE art bottom
 
     // Minimum left clearance so labels don't overlap the square
@@ -156,7 +161,7 @@
     // State
     let currentPDF = null;
     let currentZoom = 1;
-    let imposedPDFBytes = null;
+    let imposedPDFBytes = null;    // pristine bytes for download
     let rotatePDFOrientation = false;
     let originalFilename = '';
     let lastInputArrayBuffer = null;
@@ -166,8 +171,8 @@
 
     document.getElementById('fileInput').addEventListener('change', handleFileSelect);
 
-    // Reprocess when controls change
-    ['autoLayout','rowsAcross','gapOverride','leftGap','rightGap'].forEach(id => {
+    // Reprocess when controls change (including new colGap)
+    ['autoLayout','rowsAcross','gapOverride','leftGap','rightGap','colGap'].forEach(id => {
       document.getElementById(id).addEventListener('change', async () => {
         const isAuto = document.getElementById('autoLayout').checked;
         document.getElementById('rowsAcross').disabled = isAuto;
@@ -181,6 +186,12 @@
         }
       });
     });
+
+    function getColGap() {
+      const el = document.getElementById('colGap');
+      const v = parseFloat(el ? el.value : '1');
+      return Number.isFinite(v) && v >= 0 ? v : 1;
+    }
 
     async function handleFileSelect(event) {
       const file = event.target.files[0];
@@ -209,7 +220,7 @@
     // Margins / overrides
     function getMargins() {
       const override = document.getElementById('gapOverride').checked;
-      let left = MIN_LEFT_CLEAR_MM;
+      let left = MIN_LEFT_CLEAR_MM; // ensure dot clearance
       let right = 0;
       if (override) {
         const l = parseFloat(document.getElementById('leftGap').value)  || 0;
@@ -221,18 +232,21 @@
     }
 
     // Compute how many fit + used height (for a given orientation)
-    function computeLayoutForOrientation(labelWmm, labelHmm, margins, manualCols=null) {
+    function computeLayoutForOrientation(labelWmm, labelHmm, margins, rowGapMM, colGapMM, manualCols = null) {
       const innerW = SHEET_WIDTH_MM - margins.left - margins.right;
-      const maxCols = Math.max(0, Math.floor((innerW + GAP_MM) / (labelWmm + GAP_MM)));
+
+      // columns computed with COLUMN gap
+      const maxCols = Math.max(0, Math.floor((innerW + colGapMM) / (labelWmm + colGapMM)));
       const cols = manualCols == null ? maxCols : Math.max(0, Math.min(manualCols, maxCols));
 
+      // rows computed with ROW gap
       const innerHCap = MAX_SHEET_HEIGHT_MM - margins.top - margins.bottom;
-      const maxRows = Math.max(0, Math.floor((innerHCap + GAP_MM) / (labelHmm + GAP_MM)));
+      const maxRows = Math.max(0, Math.floor((innerHCap + rowGapMM) / (labelHmm + rowGapMM)));
       const rows = maxRows;
 
-      // Height we will actually use (with 1mm top/bottom)
+      // used sheet height (bottom margin + rows + row gaps + top margin)
       const usedHeight = (rows > 0)
-        ? margins.bottom + rows * labelHmm + (rows - 1) * GAP_MM + margins.top
+        ? margins.bottom + rows * labelHmm + (rows - 1) * rowGapMM + margins.top
         : margins.bottom + margins.top;
 
       return { cols, rows, usedHeight, innerW };
@@ -259,10 +273,12 @@
       const margins = getMargins();
       const isAuto = document.getElementById('autoLayout').checked;
       const manualCols = isAuto ? null : (parseInt(document.getElementById('rowsAcross').value, 10) || 1);
+      const colGapMM = getColGap();
+      const rowGapMM = ROW_GAP_MM;
 
       // Try both orientations; pick more labels (manual cols respected)
-      const A = computeLayoutForOrientation(artWmm, artHmm, margins, manualCols); // normal
-      const B = computeLayoutForOrientation(artHmm, artWmm, margins, manualCols); // rotated
+      const A = computeLayoutForOrientation(artWmm, artHmm, margins, rowGapMM, colGapMM, manualCols); // normal
+      const B = computeLayoutForOrientation(artHmm, artWmm, margins, rowGapMM, colGapMM, manualCols); // rotated
 
       let useRot = false, cols, rows, usedHeightMM, labelWmm, labelHmm, innerW;
       const countA = A.cols * A.rows;
@@ -282,25 +298,13 @@
 
       rotatePDFOrientation = useRot;
 
-    //   // Centering math
-    //   const gridW = cols * labelWmm + (cols - 1) * GAP_MM; // total width of columns + gaps
-    //   const leftEdgeMM = margins.left + Math.max(0, (innerW - gridW) / 2); // centered within usable width
-    // --- Centering on the full sheet (not just right of the dot) ---
-    const gridW = cols * labelWmm + (cols - 1) * GAP_MM; // total width of columns + gaps
-
-    // Ideal left edge if perfectly centered on the sheet
-    let leftEdgeMM = (SHEET_WIDTH_MM - gridW) / 2;
-
-    // Enforce bounds:
-    //  - keep user left/right overrides (margins.left / margins.right)
-    //  - keep minimum clearance so art never overlaps the black square
-    const minLeft = Math.max(margins.left, MIN_LEFT_CLEAR_MM);
-    const maxLeft = SHEET_WIDTH_MM - margins.right - gridW;
-
-    if (leftEdgeMM < minLeft) leftEdgeMM = minLeft;
-    if (leftEdgeMM > maxLeft) leftEdgeMM = maxLeft;
-
-
+      // --- Center on the full sheet (not just right of the dot) ---
+      const gridW = cols * labelWmm + (cols - 1) * colGapMM; // total width of columns + gaps
+      let leftEdgeMM = (SHEET_WIDTH_MM - gridW) / 2;         // ideal sheet-centered
+      const minLeft = Math.max(margins.left, MIN_LEFT_CLEAR_MM);
+      const maxLeft = SHEET_WIDTH_MM - margins.right - gridW;
+      if (leftEdgeMM < minLeft) leftEdgeMM = minLeft;
+      if (leftEdgeMM > maxLeft) leftEdgeMM = maxLeft;
 
       // Build output
       const outDoc = await PDFDocument.create();
@@ -310,8 +314,8 @@
       // Place grid (origin bottom-left)
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          const xMM = leftEdgeMM + c * (labelWmm + GAP_MM);
-          const yMM = margins.bottom + r * (labelHmm + GAP_MM);
+          const xMM = leftEdgeMM + c * (labelWmm + colGapMM);
+          const yMM = margins.bottom + r * (labelHmm + rowGapMM);
 
           if (rotatePDFOrientation) {
             page.drawPage(embedded, {
@@ -333,7 +337,7 @@
 
         // Black square per row:
         // X = fixed 2.57mm from left. Bottom of square = art bottom + 1.65mm.
-        const artBottomThisRowMM = margins.bottom + r * (labelHmm + GAP_MM);
+        const artBottomThisRowMM = margins.bottom + r * (labelHmm + rowGapMM);
         const dotBottomYMM = artBottomThisRowMM + DOT_OFFSET_FROM_ART_BOTTOM_MM;
 
         page.drawRectangle({
@@ -346,10 +350,10 @@
         });
       }
 
+      // ---- Save & Preview (keep pristine bytes for download) ----
       const bytes = await outDoc.save();
-
-    // Keep a pristine copy for DOWNLOAD (never give this to PDF.js)
-    imposedPDFBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      imposedPDFBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes); // pristine for download
+      const previewBytes = imposedPDFBytes.slice();                                   // clone for PDF.js
 
       // Update UI
       document.getElementById('infoGrid').style.display = 'grid';
@@ -359,9 +363,7 @@
       document.getElementById('labelsPerSheet').textContent = cols * rows;
       document.getElementById('orientation').textContent = rotatePDFOrientation ? 'Rotated 90°' : 'Normal';
 
-    //   await displayPDF(imposedPDFBytes);
-        const previewBytes = imposedPDFBytes.slice();
-        await displayPDF(previewBytes);
+      await displayPDF(previewBytes);
       document.getElementById('viewerSection').style.display = 'block';
 
       const downloadBtn = document.querySelector('button[onclick="downloadPDF()"]');
@@ -399,24 +401,18 @@
     function downloadPDF() {
       try {
         if (!(imposedPDFBytes instanceof Uint8Array) || imposedPDFBytes.length === 0) {
-        alert('PDF not ready to download yet. Please reprocess the file.');
-        return;
+          alert('PDF not ready to download yet. Please reprocess the file.');
+          return;
         }
+        const btn = document.querySelector('button[onclick="downloadPDF()"]');
+        if (btn) { btn.textContent = 'Downloading...'; btn.disabled = true; }
 
         const blob = new Blob([imposedPDFBytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = originalFilename + '_imposed.pdf';
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-
-        setTimeout(() => {
-        URL.revokeObjectURL(url);
-        a.remove();
-        }, 100);
-
+        a.href = url; a.download = originalFilename + '_imposed.pdf'; a.style.display = 'none';
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); if (btn) { btn.textContent = 'Download Imposed PDF'; btn.disabled = false; } }, 100);
       } catch (e) {
         alert('Error downloading PDF: ' + e.message);
         const btn = document.querySelector('button[onclick="downloadPDF()"]');
