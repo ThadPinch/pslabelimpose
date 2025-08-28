@@ -1,536 +1,402 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Label Imposition Tool</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PDF Label Imposition Tool</title>
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #f5f5f5;
-            color: #333;
-            line-height: 1.6;
-        }
+  <!-- libs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f5f5f5; color:#333; line-height:1.6; }
+    .container { max-width:1400px; margin:0 auto; padding:20px; }
+    h1 { text-align:center; color:#2c3e50; margin-bottom:30px; font-size:2.2rem; }
 
-        h1 {
-            text-align: center;
-            color: #2c3e50;
-            margin-bottom: 30px;
-            font-size: 2.5em;
-        }
+    .upload-section,.viewer-section {
+      background:#fff; border-radius:10px; padding:24px;
+      box-shadow:0 2px 10px rgba(0,0,0,.08); margin-bottom:24px;
+    }
+    .file-input-wrapper { position:relative; display:block; }
+    .file-input { position:absolute; opacity:0; width:100%; height:100%; cursor:pointer; }
+    .file-input-label {
+      display:block; padding:36px; background:#3498db; color:#fff; text-align:center;
+      border-radius:8px; font-size:1.1rem; transition:.25s; border:3px dashed transparent;
+    }
+    .file-input-label:hover { background:#2980b9; border-color:rgba(255,255,255,.35); }
+    .file-icon { font-size:2.5rem; display:block; margin-bottom:8px; }
 
-        .upload-section {
-            background: white;
-            border-radius: 10px;
-            padding: 30px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-        }
+    .control-section { background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; padding:16px; margin-top:16px; }
+    .control-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .control-group { display:flex; flex-direction:column; gap:6px; }
+    .control-group label { font-weight:600; color:#2c3e50; font-size:.92rem; }
+    .control-group input[type="checkbox"] { width:auto; }
+    .control-group input[type="number"] {
+      padding:8px 10px; border:1px solid #ddd; border-radius:6px; font-size:1rem;
+    }
+    .control-group input[disabled] { background:#f5f5f5; color:#999; }
 
-        .file-input-wrapper {
-            position: relative;
-            display: inline-block;
-            cursor: pointer;
-            width: 100%;
-        }
+    .note { margin-top:10px; font-size:.9rem; color:#2c5aa0; background:#e8f4fd; border:1px solid #b3d9ff; border-radius:6px; padding:10px 12px; }
 
-        .file-input {
-            position: absolute;
-            opacity: 0;
-            width: 100%;
-            height: 100%;
-            cursor: pointer;
-        }
+    .info-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-top:16px; }
+    .info-card { background:#f8f9fa; border:1px solid #e9ecef; border-radius:6px; padding:12px; }
+    .info-card h3 { color:#7f8c8d; font-size:.85rem; text-transform:uppercase; margin-bottom:4px; }
+    .info-card p { color:#2c3e50; font-size:1.15rem; font-weight:700; }
 
-        .file-input-label {
-            display: block;
-            padding: 40px;
-            background: #3498db;
-            color: white;
-            text-align: center;
-            border-radius: 5px;
-            font-size: 1.2em;
-            transition: all 0.3s;
-            border: 3px dashed transparent;
-        }
+    .viewer-controls { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+    .button-group { display:flex; gap:10px; align-items:center; }
+    button { border:none; border-radius:6px; padding:10px 16px; font-size:1rem; cursor:pointer; transition:.2s; }
+    .btn-primary { background:#27ae60; color:#fff; }
+    .btn-primary[disabled] { background:#95a5a6 !important; cursor:not-allowed; }
+    .btn-secondary { background:#95a5a6; color:#fff; }
 
-        .file-input-label:hover {
-            background: #2980b9;
-            border-color: rgba(255, 255, 255, 0.3);
-        }
+    #pdfViewer { width:100%; height:800px; border:1px solid #ddd; border-radius:6px; overflow:auto; background:#e0e0e0; position:relative; }
+    #pdfCanvas { display:block; margin:0 auto; background:#e0e0e0; }
+    .loading { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#7f8c8d; }
 
-        .file-input-label.drag-over {
-            background: #2980b9;
-            border-color: white;
-            transform: scale(1.02);
-        }
-
-        .file-icon {
-            font-size: 3em;
-            margin-bottom: 10px;
-            display: block;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .info-card {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            text-align: center;
-        }
-
-        .info-card h3 {
-            color: #7f8c8d;
-            font-size: 0.9em;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-        }
-
-        .info-card p {
-            color: #2c3e50;
-            font-size: 1.5em;
-            font-weight: bold;
-        }
-
-        .viewer-section {
-            background: white;
-            border-radius: 10px;
-            padding: 30px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            display: none;
-        }
-
-        .viewer-controls {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .viewer-controls h2 {
-            color: #2c3e50;
-            margin: 0;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 10px;
-        }
-
-        button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            font-size: 1em;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .btn-primary {
-            background: #27ae60;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #229954;
-        }
-
-        .btn-secondary {
-            background: #95a5a6;
-            color: white;
-        }
-
-        .btn-secondary:hover {
-            background: #7f8c8d;
-        }
-
-        #pdfViewer {
-            width: 100%;
-            height: 800px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            overflow: auto;
-            background: #e0e0e0;
-            position: relative;
-        }
-
-        #pdfCanvas {
-            display: block;
-            margin: 0 auto;
-            background-color: #e0e0e0;
-        }
-
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 1.2em;
-            color: #7f8c8d;
-        }
-
-        .page-controls {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .page-info {
-            color: #7f8c8d;
-        }
-
-        .zoom-controls {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .zoom-controls button {
-            padding: 5px 10px;
-            font-size: 1.2em;
-        }
-
-        .zoom-info {
-            color: #7f8c8d;
-            min-width: 60px;
-            text-align: center;
-        }
-    </style>
+    .zoom-controls { display:flex; align-items:center; gap:8px; }
+    .zoom-controls button { padding:6px 10px; font-size:1.1rem; }
+    .zoom-info { color:#7f8c8d; min-width:60px; text-align:center; }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>PDF Label Imposition Tool</h1>
-        
-        <div class="upload-section">
-            <div class="file-input-wrapper">
-                <input type="file" id="fileInput" class="file-input" accept=".pdf">
-                <label for="fileInput" class="file-input-label" id="dropZone">
-                    <span class="file-icon">📄</span>
-                    <span id="dropText">Drag & drop your PDF here or click to browse</span>
-                </label>
-            </div>
-            
-            <div class="info-grid" id="infoGrid" style="display: none;">
-                <div class="info-card">
-                    <h3>Original Size</h3>
-                    <p id="originalSize">-</p>
-                </div>
-                <div class="info-card">
-                    <h3>Grid Layout</h3>
-                    <p id="gridLayout">-</p>
-                </div>
-                <div class="info-card">
-                    <h3>Labels per Sheet</h3>
-                    <p id="labelsPerSheet">-</p>
-                </div>
-                <div class="info-card">
-                    <h3>Orientation</h3>
-                    <p id="orientation">-</p>
-                </div>
-            </div>
-        </div>
+  <div class="container">
+    <h1>PDF Label Imposition Tool</h1>
 
-        <div class="viewer-section" id="viewerSection">
-            <div class="viewer-controls">
-                <h2>Imposed PDF Preview</h2>
-                <div class="button-group">
-                    <div class="zoom-controls">
-                        <button class="btn-secondary" onclick="zoomOut()">−</button>
-                        <span class="zoom-info" id="zoomInfo">100%</span>
-                        <button class="btn-secondary" onclick="zoomIn()">+</button>
-                    </div>
-                    <!-- <button class="btn-primary" onclick="downloadPDF()">Download Imposed PDF</button> -->
-                </div>
-            </div>
-            <div id="pdfViewer">
-                <canvas id="pdfCanvas"></canvas>
-                <div class="loading" id="loading">Processing...</div>
-            </div>
+    <div class="upload-section">
+      <div class="file-input-wrapper">
+        <input type="file" id="fileInput" class="file-input" accept=".pdf" />
+        <label for="fileInput" class="file-input-label" id="dropZone">
+          <span class="file-icon">📄</span>
+          <span id="dropText">Drag & drop your PDF here or click to browse</span>
+        </label>
+      </div>
+
+      <!-- OPTIONS -->
+      <div class="control-section" id="controlSection" style="display:none;">
+        <div class="control-grid">
+          <div class="control-group">
+            <label for="autoLayout">Auto Layout</label>
+            <input type="checkbox" id="autoLayout" checked />
+          </div>
+          <div class="control-group">
+            <label for="rowsAcross">Columns Across (manual)</label>
+            <input type="number" id="rowsAcross" min="1" max="50" value="1" disabled />
+          </div>
+          <div class="control-group">
+            <label for="gapOverride">Left/Right Gap Override</label>
+            <input type="checkbox" id="gapOverride" />
+          </div>
+          <div class="control-group">
+            <label for="leftGap">Left Gap (mm)</label>
+            <input type="number" id="leftGap" min="0" max="100" step="0.1" value="0" disabled />
+          </div>
+          <div class="control-group">
+            <label for="rightGap">Right Gap (mm)</label>
+            <input type="number" id="rightGap" min="0" max="100" step="0.1" value="0" disabled />
+          </div>
         </div>
+      </div>
+
+      <div class="note">
+        ✅ Enforced: width <b>320 mm</b>, height ≤ <b>980 mm</b> and equals used art height.<br/>
+        ✅ Gaps: <b>1 mm</b> between columns and rows; top/bottom margins: <b>1 mm</b> each.<br/>
+        ✅ Black square: <b>6.35×6.35 mm</b> at <b>2.57 mm</b> from left; bottom is <b>1.65 mm ABOVE</b> each row’s art bottom.<br/>
+        ✅ Rows are <b>centered horizontally</b> in the usable width.
+      </div>
+
+      <div class="info-grid" id="infoGrid" style="display:none;">
+        <div class="info-card"><h3>Art Size</h3><p id="originalSize">-</p></div>
+        <div class="info-card"><h3>Sheet Size (mm)</h3><p id="sheetSize">-</p></div>
+        <div class="info-card"><h3>Grid (cols × rows)</h3><p id="gridLayout">-</p></div>
+        <div class="info-card"><h3>Labels per Sheet</h3><p id="labelsPerSheet">-</p></div>
+        <div class="info-card"><h3>Orientation</h3><p id="orientation">-</p></div>
+      </div>
     </div>
 
-    <script>
-        // Set worker source for PDF.js
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    <div class="viewer-section" id="viewerSection" style="display:none;">
+      <div class="viewer-controls">
+        <h2>Imposed PDF Preview</h2>
+        <div class="button-group">
+          <button class="btn-primary" onclick="downloadPDF()">Download Imposed PDF</button>
+          <div class="zoom-controls">
+            <button class="btn-secondary" onclick="zoomOut()">−</button>
+            <span class="zoom-info" id="zoomInfo">100%</span>
+            <button class="btn-secondary" onclick="zoomIn()">+</button>
+          </div>
+        </div>
+      </div>
+      <div id="pdfViewer">
+        <canvas id="pdfCanvas"></canvas>
+        <div class="loading" id="loading">Processing...</div>
+      </div>
+    </div>
+  </div>
 
-        let currentPDF = null;
-        let currentZoom = 1;
-        let imposedPDFBytes = null;
-        let rotatePDFOrientation = false;
-        let originalFilename = '';
+  <script>
+    // PDF.js worker (for previewing the RESULT)
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        // Imposition frame size in mm
-        const impositionFrame = {
-            width: 321,
-            height: 830
-        };
+    // ---------- Constants (mm) ----------
+    const SHEET_WIDTH_MM = 320;
+    const MAX_SHEET_HEIGHT_MM = 980;
+    const GAP_MM = 1;                        // between labels horizontally & vertically
+    const TOP_MARGIN_MM = 1;                 // from sheet top to art grid
+    const BOTTOM_MARGIN_MM = 1;              // from sheet bottom to art grid
+    const DOT_SIZE_MM = 6.35;
+    const DOT_X_MM = 2.57;                   // from left sheet edge
+    const DOT_OFFSET_FROM_ART_BOTTOM_MM = 1.65; // dot bottom ABOVE art bottom
 
-        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+    // Minimum left clearance so labels don't overlap the square
+    const MIN_LEFT_CLEAR_MM = DOT_X_MM + DOT_SIZE_MM;
 
-        async function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (!file || file.type !== 'application/pdf') {
-                alert('Please select a valid PDF file');
-                return;
-            }
+    // State
+    let currentPDF = null;
+    let currentZoom = 1;
+    let imposedPDFBytes = null;
+    let rotatePDFOrientation = false;
+    let originalFilename = '';
+    let lastInputArrayBuffer = null;
 
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('pdfCanvas').style.display = 'none';
-            
-            // Store the original filename without extension
-            originalFilename = file.name.replace(/\.pdf$/i, '');
+    // Utilities
+    const mmToPoints = (mm) => mm * 2.834645669; // 72 / 25.4
 
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                await processAndImposePDF(arrayBuffer, file.name);
-            } catch (error) {
-                console.error('Error processing PDF:', error);
-                alert('Error processing PDF: ' + error.message);
-            }
+    document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+
+    // Reprocess when controls change
+    ['autoLayout','rowsAcross','gapOverride','leftGap','rightGap'].forEach(id => {
+      document.getElementById(id).addEventListener('change', async () => {
+        const isAuto = document.getElementById('autoLayout').checked;
+        document.getElementById('rowsAcross').disabled = isAuto;
+
+        const isOverride = document.getElementById('gapOverride').checked;
+        document.getElementById('leftGap').disabled  = !isOverride;
+        document.getElementById('rightGap').disabled = !isOverride;
+
+        if (lastInputArrayBuffer) {
+          await processAndImposePDF(lastInputArrayBuffer);
         }
+      });
+    });
 
-        function calculateLabels(widthInches, heightInches) {
-            const w = widthInches * 25.4;
-            const h = heightInches * 25.4;
+    async function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file || file.type !== 'application/pdf') {
+        alert('Please select a valid PDF file');
+        return;
+      }
 
-            const cols1 = Math.floor(impositionFrame.width / w);
-            const rows1 = Math.floor(impositionFrame.height / h);
-            const cols2 = Math.floor(impositionFrame.width / h);
-            const rows2 = Math.floor(impositionFrame.height / w);
+      document.getElementById('viewerSection').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('pdfCanvas').style.display = 'none';
 
-            if (cols1 * rows1 >= cols2 * rows2) {
-                rotatePDFOrientation = false;
-                return [cols1, rows1];
-            } else {
-                rotatePDFOrientation = true;
-                return [cols2, rows2];
-            }
-        }
+      const downloadBtn = document.querySelector('button[onclick="downloadPDF()"]');
+      if (downloadBtn) { downloadBtn.textContent = 'Processing...'; downloadBtn.disabled = true; }
 
-        async function processAndImposePDF(arrayBuffer, filename) {
-            const { PDFDocument, degrees, cmyk } = PDFLib;
-            
-            // Load the PDF with options to preserve quality
-            const pdfDoc = await PDFDocument.load(arrayBuffer, {
-                updateMetadata: false,
-                ignoreEncryption: false
+      originalFilename = file.name.replace(/\.pdf$/i, '');
+      lastInputArrayBuffer = await file.arrayBuffer();
+
+      await processAndImposePDF(lastInputArrayBuffer).catch(err => {
+        console.error(err);
+        alert('Error processing PDF: ' + err.message);
+        if (downloadBtn) { downloadBtn.textContent = 'Download Imposed PDF'; downloadBtn.disabled = false; }
+      });
+    }
+
+    // Margins / overrides
+    function getMargins() {
+      const override = document.getElementById('gapOverride').checked;
+      let left = MIN_LEFT_CLEAR_MM;
+      let right = 0;
+      if (override) {
+        const l = parseFloat(document.getElementById('leftGap').value)  || 0;
+        const r = parseFloat(document.getElementById('rightGap').value) || 0;
+        left  = Math.max(l, MIN_LEFT_CLEAR_MM); // never violate square clearance
+        right = Math.max(r, 0);
+      }
+      return { left, right, top: TOP_MARGIN_MM, bottom: BOTTOM_MARGIN_MM };
+    }
+
+    // Compute how many fit + used height (for a given orientation)
+    function computeLayoutForOrientation(labelWmm, labelHmm, margins, manualCols=null) {
+      const innerW = SHEET_WIDTH_MM - margins.left - margins.right;
+      const maxCols = Math.max(0, Math.floor((innerW + GAP_MM) / (labelWmm + GAP_MM)));
+      const cols = manualCols == null ? maxCols : Math.max(0, Math.min(manualCols, maxCols));
+
+      const innerHCap = MAX_SHEET_HEIGHT_MM - margins.top - margins.bottom;
+      const maxRows = Math.max(0, Math.floor((innerHCap + GAP_MM) / (labelHmm + GAP_MM)));
+      const rows = maxRows;
+
+      // Height we will actually use (with 1mm top/bottom)
+      const usedHeight = (rows > 0)
+        ? margins.bottom + rows * labelHmm + (rows - 1) * GAP_MM + margins.top
+        : margins.bottom + margins.top;
+
+      return { cols, rows, usedHeight, innerW };
+    }
+
+    async function processAndImposePDF(arrayBuffer) {
+      const { PDFDocument, degrees, cmyk } = PDFLib;
+
+      // Load source
+      const srcDoc = await PDFDocument.load(arrayBuffer, { updateMetadata:false, ignoreEncryption:false });
+      const srcPage = srcDoc.getPage(0);
+
+      // Prefer TrimBox; fallback to MediaBox
+      let box;
+      try { box = srcPage.getTrimBox(); } catch { box = srcPage.getMediaBox(); }
+
+      const artWIn = box.width  / 72;
+      const artHIn = box.height / 72;
+      document.getElementById('originalSize').textContent = `${artWIn.toFixed(2)}" × ${artHIn.toFixed(2)}"`;
+
+      const artWmm = artWIn * 25.4;
+      const artHmm = artHIn * 25.4;
+
+      const margins = getMargins();
+      const isAuto = document.getElementById('autoLayout').checked;
+      const manualCols = isAuto ? null : (parseInt(document.getElementById('rowsAcross').value, 10) || 1);
+
+      // Try both orientations; pick more labels (manual cols respected)
+      const A = computeLayoutForOrientation(artWmm, artHmm, margins, manualCols); // normal
+      const B = computeLayoutForOrientation(artHmm, artWmm, margins, manualCols); // rotated
+
+      let useRot = false, cols, rows, usedHeightMM, labelWmm, labelHmm, innerW;
+      const countA = A.cols * A.rows;
+      const countB = B.cols * B.rows;
+
+      if (countB > countA) {
+        useRot = true; ({ cols, rows, usedHeight: usedHeightMM, innerW } = B);
+        labelWmm = artHmm; labelHmm = artWmm;
+      } else {
+        useRot = false; ({ cols, rows, usedHeight: usedHeightMM, innerW } = A);
+        labelWmm = artWmm; labelHmm = artHmm;
+      }
+
+      if (cols === 0 || rows === 0) {
+        throw new Error('Art is too large to fit on a 320×980 mm sheet with current gaps/margins.');
+      }
+
+      rotatePDFOrientation = useRot;
+
+      // Centering math
+      const gridW = cols * labelWmm + (cols - 1) * GAP_MM; // total width of columns + gaps
+      const leftEdgeMM = margins.left + Math.max(0, (innerW - gridW) / 2); // centered within usable width
+
+      // Build output
+      const outDoc = await PDFDocument.create();
+      const page = outDoc.addPage([mmToPoints(SHEET_WIDTH_MM), mmToPoints(usedHeightMM)]);
+      const [embedded] = await outDoc.embedPdf(srcDoc, [0]);
+
+      // Place grid (origin bottom-left)
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const xMM = leftEdgeMM + c * (labelWmm + GAP_MM);
+          const yMM = margins.bottom + r * (labelHmm + GAP_MM);
+
+          if (rotatePDFOrientation) {
+            page.drawPage(embedded, {
+              x: mmToPoints(xMM + labelWmm),
+              y: mmToPoints(yMM),
+              width: embedded.width,
+              height: embedded.height,
+              rotate: degrees(90)
             });
-            const firstPage = pdfDoc.getPage(0);
-            
-            // Get dimensions in inches (72 points = 1 inch)
-            const firstPageWidthInches = firstPage.getWidth() / 72;
-            const firstPageHeightInches = firstPage.getHeight() / 72;
-            
-            // Update info display
-            document.getElementById('originalSize').textContent = 
-                `${firstPageWidthInches.toFixed(2)}" × ${firstPageHeightInches.toFixed(2)}"`;
-            
-            // Calculate grid layout
-            const [cols, rows] = calculateLabels(firstPageWidthInches, firstPageHeightInches);
-            document.getElementById('gridLayout').textContent = `${cols} × ${rows}`;
-            document.getElementById('labelsPerSheet').textContent = cols * rows;
-            document.getElementById('orientation').textContent = 
-                rotatePDFOrientation ? 'Rotated 90°' : 'Normal';
-            document.getElementById('infoGrid').style.display = 'grid';
-            
-            // Create new PDF document
-            const newPdfDoc = await PDFDocument.create();
-            
-            // Convert mm to points
-            const mmToPoints = mm => mm * 2.834645669;
-            
-            // Add page with imposition frame size
-            const newPage = newPdfDoc.addPage([
-                mmToPoints(impositionFrame.width), 
-                mmToPoints(impositionFrame.height)
-            ]);
-            
-            // Get label dimensions in mm
-            let labelWidthInMM, labelHeightInMM;
-            if (rotatePDFOrientation) {
-                labelWidthInMM = firstPageHeightInches * 25.4;
-                labelHeightInMM = firstPageWidthInches * 25.4;
-            } else {
-                labelWidthInMM = firstPageWidthInches * 25.4;
-                labelHeightInMM = firstPageHeightInches * 25.4;
-            }
-            
-            const labelFullWidth = labelWidthInMM * cols;
-            const labelFullHeight = labelHeightInMM * rows;
-            
-            // Calculate gaps
-            const horizontalGap = (impositionFrame.width - labelFullWidth) / (cols * 2);
-            const verticalGap = (impositionFrame.height - labelFullHeight) / (rows * 2);
-            
-            // Embed the first page - this preserves the original page's color space and quality
-            const [embeddedPage] = await newPdfDoc.embedPdf(pdfDoc, [0]);
-            
-            // Place PDFs in grid
-            for (let row = 0; row < rows; row++) {
-                for (let col = 0; col < cols; col++) {
-                    const x = mmToPoints(horizontalGap + col * (labelWidthInMM + 2 * horizontalGap));
-                    const y = mmToPoints(impositionFrame.height - verticalGap - (row + 1) * labelHeightInMM - row * (2 * verticalGap));
-                    
-                    if (rotatePDFOrientation) {
-                        newPage.drawPage(embeddedPage, {
-                            x: x + mmToPoints(labelWidthInMM),
-                            y: y,
-                            width: embeddedPage.width,
-                            height: embeddedPage.height,
-                            rotate: degrees(90)
-                        });
-                    } else {
-                        newPage.drawPage(embeddedPage, {
-                            x: x,
-                            y: y,
-                            width: embeddedPage.width,
-                            height: embeddedPage.height
-                        });
-                    }
-                }
-                
-                // Add black square for this row
-                // Square is 0.25" x 0.25" (6.35mm x 6.35mm)
-                const squareSize = 0.25 * 72; // 0.25 inches in points
-                const squareX = mmToPoints(horizontalGap) - mmToPoints(12.9); // 13mm to the left of leftmost position
-                const squareY = mmToPoints(impositionFrame.height - verticalGap - (row + 1) * labelHeightInMM - row * (2 * verticalGap)) + 6; // 4 mm above the bottom of the row
-                
-                // Draw black square using CMYK black
-                newPage.drawRectangle({
-                    x: squareX,
-                    y: squareY,
-                    width: squareSize,
-                    height: squareSize,
-                    color: PDFLib.cmyk(0, 0, 0, 1), // 100% K black in CMYK
-                    borderWidth: 0
-                });
-            }
-            
-            // Save the new PDF
-            imposedPDFBytes = await newPdfDoc.save();
-            
-            console.log('PDF created, size:', imposedPDFBytes.length, 'bytes');
-            
-            // Download immediately after creation
-            downloadPDF();
-            
-            // Display the PDF
-            await displayPDF(imposedPDFBytes);
-            
-            // Show viewer section
-            document.getElementById('viewerSection').style.display = 'block';
+          } else {
+            page.drawPage(embedded, {
+              x: mmToPoints(xMM),
+              y: mmToPoints(yMM),
+              width: embedded.width,
+              height: embedded.height
+            });
+          }
         }
 
-        async function displayPDF(pdfBytes) {
-            const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
-            currentPDF = await loadingTask.promise;
-            
-            await renderPage(1);
-            
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('pdfCanvas').style.display = 'block';
-        }
+        // Black square per row:
+        // X = fixed 2.57mm from left. Bottom of square = art bottom + 1.65mm.
+        const artBottomThisRowMM = margins.bottom + r * (labelHmm + GAP_MM);
+        const dotBottomYMM = artBottomThisRowMM + DOT_OFFSET_FROM_ART_BOTTOM_MM;
 
-        async function renderPage(pageNum) {
-			
-            const page = await currentPDF.getPage(pageNum);
-            const viewport = page.getViewport({ scale: currentZoom });
-            
-            const canvas = document.getElementById('pdfCanvas');
-            const context = canvas.getContext('2d');
-            
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-            
-            const renderContext = {
-                canvasContext: context,
-                viewport: viewport
-            };
-            
-            await page.render(renderContext);
-        }
+        page.drawRectangle({
+          x: mmToPoints(DOT_X_MM),
+          y: mmToPoints(dotBottomYMM),
+          width: mmToPoints(DOT_SIZE_MM),
+          height: mmToPoints(DOT_SIZE_MM),
+          color: cmyk(0, 0, 0, 1),
+          borderWidth: 0
+        });
+      }
 
-        function zoomIn() {
-            if (currentZoom < 3) {
-                currentZoom += 0.25;
-                updateZoom();
-            }
-        }
+      imposedPDFBytes = await outDoc.save();
 
-        function zoomOut() {
-            if (currentZoom > 0.25) {
-                currentZoom -= 0.25;
-                updateZoom();
-            }
-        }
+      // Update UI
+      document.getElementById('infoGrid').style.display = 'grid';
+      document.getElementById('controlSection').style.display = 'block';
+      document.getElementById('sheetSize').textContent = `${SHEET_WIDTH_MM} × ${usedHeightMM.toFixed(2)} mm`;
+      document.getElementById('gridLayout').textContent = `${cols} × ${rows}`;
+      document.getElementById('labelsPerSheet').textContent = cols * rows;
+      document.getElementById('orientation').textContent = rotatePDFOrientation ? 'Rotated 90°' : 'Normal';
 
-        function updateZoom() {
-            document.getElementById('zoomInfo').textContent = Math.round(currentZoom * 100) + '%';
-            if (currentPDF) {
-                renderPage(1);
-            }
-        }
+      await displayPDF(imposedPDFBytes);
+      document.getElementById('viewerSection').style.display = 'block';
 
-        function downloadPDF() {
-            try {
-                if (!imposedPDFBytes) {
-                    console.error('No PDF bytes available');
-                    return;
-                }
-                
-                console.log('Starting download, PDF type:', typeof imposedPDFBytes);
-                console.log('PDF bytes length:', imposedPDFBytes.byteLength || imposedPDFBytes.length);
-                console.log('First few bytes:', Array.from(imposedPDFBytes.slice(0, 10)));
-                
-                // Ensure we have a proper Uint8Array
-                const pdfData = imposedPDFBytes instanceof Uint8Array ? imposedPDFBytes : new Uint8Array(imposedPDFBytes);
-                
-                // Create blob with the PDF data
-                const blob = new Blob([pdfData], { type: 'application/pdf' });
-                console.log('Blob size:', blob.size);
-                
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = originalFilename + '_imposed.pdf';
-                document.body.appendChild(a);
-                a.click();
-                
-                // Clean up
-                setTimeout(() => {
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                }, 100);
-                
-                console.log('Download initiated successfully');
-            } catch (error) {
-                console.error('Error in downloadPDF:', error);
-                alert('Error downloading PDF: ' + error.message);
-            }
+      const downloadBtn = document.querySelector('button[onclick="downloadPDF()"]');
+      if (downloadBtn) { downloadBtn.textContent = 'Download Imposed PDF'; downloadBtn.disabled = false; }
+    }
+
+    // ---------- Preview helpers (render imposed PDF with PDF.js) ----------
+    async function displayPDF(pdfBytes) {
+      const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+      currentPDF = await loadingTask.promise;
+      await renderPage(1);
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('pdfCanvas').style.display = 'block';
+    }
+
+    async function renderPage(pageNum) {
+      const page = await currentPDF.getPage(pageNum);
+      const viewport = page.getViewport({ scale: currentZoom });
+      const canvas = document.getElementById('pdfCanvas');
+      const ctx = canvas.getContext('2d');
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    }
+
+    function zoomIn(){ if (currentZoom < 3) { currentZoom += 0.25; updateZoom(); } }
+    function zoomOut(){ if (currentZoom > 0.25) { currentZoom -= 0.25; updateZoom(); } }
+    function updateZoom(){
+      document.getElementById('zoomInfo').textContent = Math.round(currentZoom * 100) + '%';
+      if (currentPDF) renderPage(1);
+    }
+
+    function downloadPDF() {
+      try {
+        if (!imposedPDFBytes) {
+          alert('No PDF available to download. Please upload and process a PDF first.');
+          return;
         }
-    </script>
+        const btn = document.querySelector('button[onclick="downloadPDF()"]');
+        if (btn) { btn.textContent = 'Downloading...'; btn.disabled = true; }
+
+        const data = imposedPDFBytes instanceof Uint8Array ? imposedPDFBytes : new Uint8Array(imposedPDFBytes);
+        const blob = new Blob([data], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = originalFilename + '_imposed.pdf'; a.style.display = 'none';
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); if (btn) { btn.textContent = 'Download Imposed PDF'; btn.disabled = false; } }, 100);
+      } catch (e) {
+        alert('Error downloading PDF: ' + e.message);
+        const btn = document.querySelector('button[onclick="downloadPDF()"]');
+        if (btn) { btn.textContent = 'Download Imposed PDF'; btn.disabled = false; }
+      }
+    }
+  </script>
 </body>
 </html>
